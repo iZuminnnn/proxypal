@@ -15,14 +15,13 @@ fn main() {
     let binary_path = binaries_dir.join(&binary_name);
 
     // Download binary if it doesn't exist
-    // Skip download in CI when only checking (not building release)
+    // Skip download in CI - binaries are downloaded in workflow steps
     let is_ci = env::var("CI").is_ok();
-    let is_release = env::var("PROFILE").map(|p| p == "release").unwrap_or(false);
     
     if !binary_path.exists() {
-        if is_ci && !is_release {
-            // In CI check mode, just warn but don't fail
-            println!("cargo:warning=Binary not found: {} (skipping download in CI check)", binary_name);
+        if is_ci {
+            // In CI, binaries should be downloaded by workflow - just warn
+            println!("cargo:warning=Binary not found: {} (expected CI to download it)", binary_name);
         } else {
             println!("cargo:warning=Binary not found: {}", binary_name);
             println!("cargo:warning=Downloading from CLIProxyAPI releases...");
@@ -50,7 +49,7 @@ fn main() {
 }
 
 fn get_binary_name(target: &str) -> String {
-    let base_name = "cli-proxy-api";
+    let base_name = "cliproxyapi";
     
     // Map Rust target triples to our binary naming convention
     let suffix = match target {
