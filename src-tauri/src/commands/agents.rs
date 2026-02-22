@@ -5,6 +5,8 @@
 
 use crate::state::AppState;
 use crate::types::{AgentStatus, AvailableModel, DetectedTool};
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use tauri::State;
 
 // Detect installed CLI agents
