@@ -627,37 +627,64 @@ pub async fn start_proxy(
         }
     });
 
-    // Give it a moment to start
-    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-    
-    // Sync usage statistics setting via Management API (in case it differs from config file)
+    // Wait for the proxy to be ready before syncing settings
     let port = config.port;
-    let enable_url = format!("http://127.0.0.1:{}/v0/management/usage-statistics-enabled", port);
-    let client = reqwest::Client::new();
-    let _ = client
-        .put(&enable_url)
-        .header("X-Management-Key", &get_management_key())
-        .json(&serde_json::json!({"value": config.usage_stats_enabled}))
-        .send()
-        .await;
-    
-    // Sync force-model-mappings setting from config to proxy runtime
-    let force_mappings_url = format!("http://127.0.0.1:{}/v0/management/ampcode/force-model-mappings", port);
-    let _ = client
-        .put(&force_mappings_url)
-        .header("X-Management-Key", &get_management_key())
-        .json(&serde_json::json!({"value": config.force_model_mappings}))
-        .send()
-        .await;
-    
-    // Sync max retry interval to CLIProxyAPI
-    let max_retry_url = format!("http://127.0.0.1:{}/v0/management/max-retry-interval", port);
-    let _ = client
-        .put(&max_retry_url)
-        .header("X-Management-Key", &get_management_key())
-        .json(&serde_json::json!({"value": config.max_retry_interval}))
-        .send()
-        .await;
+    let client = crate::build_management_client();
+    let health_url = format!("http://127.0.0.1:{}/v0/management/config.yaml", port);
+    let mut ready = false;
+    for attempt in 0..25 {
+        // 25 attempts × 200ms = 5s max
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        match client
+            .get(&health_url)
+            .header("X-Management-Key", &get_management_key())
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => {
+                ready = true;
+                break;
+            }
+            _ => {
+                if attempt == 24 {
+                    eprintln!("[ProxyPal Debug] Proxy not ready after 5s, proceeding anyway");
+                }
+            }
+        }
+    }
+
+    // Sync settings via Management API (best-effort, don't fail proxy start)
+    if ready {
+        let _ = client
+            .put(&format!(
+                "http://127.0.0.1:{}/v0/management/usage-statistics-enabled",
+                port
+            ))
+            .header("X-Management-Key", &get_management_key())
+            .json(&serde_json::json!({"value": config.usage_stats_enabled}))
+            .send()
+            .await;
+
+        let _ = client
+            .put(&format!(
+                "http://127.0.0.1:{}/v0/management/ampcode/force-model-mappings",
+                port
+            ))
+            .header("X-Management-Key", &get_management_key())
+            .json(&serde_json::json!({"value": config.force_model_mappings}))
+            .send()
+            .await;
+
+        let _ = client
+            .put(&format!(
+                "http://127.0.0.1:{}/v0/management/max-retry-interval",
+                port
+            ))
+            .header("X-Management-Key", &get_management_key())
+            .json(&serde_json::json!({"value": config.max_retry_interval}))
+            .send()
+            .await;
+    }
     
     // Start log file watcher for request tracking
     // This replaces the old polling approach and captures ALL requests including Amp proxy forwarding

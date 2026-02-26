@@ -170,8 +170,11 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 // Helper to build HTTP client for Management API
+// Uses no_proxy() to prevent local 127.0.0.1 requests from being
+// routed through the user's system proxy (which causes 502 errors)
 pub(crate) fn build_management_client() -> reqwest::Client {
     reqwest::Client::builder()
+        .no_proxy()
         .timeout(std::time::Duration::from_secs(10))
         .build()
         .unwrap_or_else(|_| reqwest::Client::new())
